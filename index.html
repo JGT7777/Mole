@@ -1,0 +1,1043 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M.O.L.E · sistema de visión</title>
+<meta name="description" content="M.O.L.E: visión por cámara en el navegador (gestos, caras, objetos, pizarra y voz).">
+<meta name="theme-color" content="#03080f">
+<style>
+  :root { --bg:#0a0e13; --card:#111821; --card2:#0d131a; --line:#202c3a; --ink:#e6eef6; --mut:#8396a8; --acc:#38d0ff; --am:#ffb347; --r:14px; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--ink); min-height:100vh; background:var(--bg); }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:max(14px, env(safe-area-inset-top)) 16px 12px; max-width:1180px; margin:0 auto; }
+  .brand { display:flex; align-items:center; gap:10px; margin-right:auto; }
+  .orb { width:26px; height:26px; border-radius:50%; background:radial-gradient(circle,#fff 0 12%,var(--acc) 14% 38%,transparent 40%); border:2px solid var(--acc); }
+  h1 { margin:0; font-size:1.15rem; font-weight:700; letter-spacing:.18em; text-transform:uppercase; }
+  #status { color:var(--mut); font-size:.78rem; max-width:260px; line-height:1.3; }
+  .modes { display:flex; gap:2px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:3px; }
+  .modes button { border:none; background:none; font-size:.85rem; padding:7px 14px; border-radius:9px; color:var(--mut); }
+  .modes button.on { background:var(--acc); color:#04202b; font-weight:700; }
+  main { max-width:1180px; margin:0 auto; padding:0 16px max(32px, env(safe-area-inset-bottom)); display:grid; gap:14px; }
+  @media (min-width:900px){ main{ grid-template-columns:minmax(0,2.2fr) minmax(280px,1fr); align-items:start; } }
+  .stage { position:relative; aspect-ratio:4/3; background:#000; border-radius:var(--r); overflow:hidden; border:1px solid var(--line); }
+  .stage video, .stage canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+  .stage.mirror video, .stage.mirror canvas { transform:scaleX(-1); }
+  .empty { position:absolute; inset:0; display:grid; place-content:center; text-align:center; gap:6px; color:var(--mut); padding:20px; z-index:1; }
+  .empty b { color:var(--ink); font-size:1.05rem; font-weight:600; }
+  .hud { position:absolute; left:12px; top:12px; z-index:3; background:#000a; padding:3px 9px; border-radius:99px; font-size:.7rem; color:#cfe9f5; font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .dock { z-index:3; position:absolute; left:50%; bottom:12px; transform:translateX(-50%); display:flex; flex-wrap:wrap; justify-content:center; gap:8px; align-items:center; background:#0b1118e6; backdrop-filter:blur(8px); border:1px solid var(--line); border-radius:14px; padding:8px 10px; max-width:calc(100% - 16px); }
+  body[data-mode=mole] .dock, body[data-mode=mole] .only-draw { display:none; }
+  body[data-mode=draw] .only-mole { display:none; }
+  .seg { display:flex; background:var(--card2); border-radius:10px; padding:2px; }
+  button, select { font:inherit; font-size:.88rem; color:var(--ink); border:1px solid var(--line); background:var(--card2); border-radius:10px; padding:7px 12px; cursor:pointer; transition:border-color .15s, background .15s; }
+  button:hover { border-color:var(--acc); }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
+  .seg button { border:none; background:none; } .seg button.on { background:var(--acc); color:#04202b; font-weight:700; }
+  .primary { background:var(--acc); border-color:var(--acc); color:#04202b; font-weight:700; } .primary:disabled { opacity:.4; }
+  .sw { display:flex; gap:5px; } .sw i { width:20px; height:20px; border-radius:50%; border:2px solid transparent; cursor:pointer; transition:transform .12s; }
+  .sw i.on { border-color:#fff; transform:scale(1.15); }
+  input[type=range] { accent-color:var(--acc); }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
+  aside { display:grid; gap:12px; }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:var(--r); padding:14px; }
+  .box h2 { margin:0 0 10px; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.16em; color:var(--mut); }
+  .big { background:var(--card2); border-radius:10px; padding:9px 10px; min-height:2.6rem; text-align:center; font-size:1.05rem; margin-bottom:8px; }
+  .big span { display:block; font-size:.64rem; text-transform:uppercase; letter-spacing:.14em; color:var(--mut); margin-bottom:2px; }
+  ul { list-style:none; margin:0; padding:0; display:grid; gap:4px; font-size:.9rem; }
+  li { display:flex; justify-content:space-between; background:var(--card2); padding:6px 10px; border-radius:8px; }
+  .log { background:var(--card2); border-radius:10px; padding:8px 10px; min-height:84px; max-height:190px; overflow:auto; font-size:.9rem; line-height:1.5; }
+  .log .me { color:var(--mut); } .log .jv { color:var(--acc); }
+  #say { flex:1; min-width:120px; font:inherit; font-size:.88rem; color:var(--ink); background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:7px 11px; }
+  .assist { display:flex; align-items:center; gap:14px; margin-bottom:10px; }
+  .aorb { width:56px; height:56px; border-radius:50%; flex:none; background:#2a3745; transition:background .2s, box-shadow .2s; }
+  .aorb.listen { background:var(--acc); animation:pulse 1.6s ease-in-out infinite; }
+  .aorb.speak { background:var(--am); animation:pulse .6s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform:scale(1.14); box-shadow:0 0 22px currentColor; } }
+  .aorb.listen { color:var(--acc); } .aorb.speak { color:var(--am); }
+  #astate { font-weight:600; } #micState { color:var(--mut); font-size:.78rem; display:block; margin-top:2px; line-height:1.3; }
+  .heard { min-height:1.4rem; color:var(--mut); font-size:.9rem; font-style:italic; margin-bottom:8px; }
+  .meter { height:6px; background:var(--card2); border-radius:99px; overflow:hidden; } .meter i { display:block; height:100%; width:0; background:var(--acc); transition:width .08s; }
+  .mic-on { background:#ff5d8f !important; border-color:#ff5d8f !important; color:#fff !important; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:.84rem; color:var(--mut); margin-top:8px; }
+  .guide { color:var(--mut); font-size:.85rem; line-height:1.7; margin:0; } .guide b { color:var(--ink); font-weight:600; }
+  /* ajustes: panel lateral */
+  #scrim { position:fixed; inset:0; background:#0009; opacity:0; pointer-events:none; transition:opacity .2s; z-index:40; }
+  #settings { position:fixed; top:0; right:0; bottom:0; width:min(380px,100vw); background:var(--card); border-left:1px solid var(--line); z-index:41; transform:translateX(100%); transition:transform .25s ease; overflow:auto; padding:max(16px, env(safe-area-inset-top)) 18px 24px; }
+  body.set-open #scrim { opacity:1; pointer-events:auto; } body.set-open #settings { transform:none; }
+  #settings header { padding:0 0 8px; max-width:none; justify-content:space-between; }
+  #settings h3 { margin:18px 0 2px; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.16em; color:var(--acc); }
+  .opt { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); font-size:.92rem; cursor:pointer; }
+  .opt small { display:block; color:var(--mut); font-size:.75rem; margin-top:1px; }
+  .opt input[type=checkbox] { appearance:none; -webkit-appearance:none; width:38px; height:22px; border-radius:99px; background:#2a3745; position:relative; cursor:pointer; transition:background .2s; flex:none; margin:0; }
+  .opt input[type=checkbox]::after { content:""; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:#cfd8e3; transition:left .2s; }
+  .opt input[type=checkbox]:checked { background:var(--acc); } .opt input[type=checkbox]:checked::after { left:19px; background:#04202b; }
+  .field { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); font-size:.92rem; }
+  .field select { max-width:190px; } .field input[type=range] { width:150px; }
+  details { margin-top:16px; } summary { cursor:pointer; color:var(--acc); font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.16em; }
+  details .guide { margin-top:8px; }
+  @media (max-width:640px){
+    header { justify-content:center; } .brand { width:100%; justify-content:center; margin:0; } .modes { flex:1; } .modes button { flex:1; }
+    #status { width:100%; text-align:center; max-width:none; }
+    .stage { aspect-ratio:3/4; } .dock { gap:5px; padding:6px; bottom:8px; } .dock button { padding:6px 9px; font-size:.78rem; } .sw i { width:17px; height:17px; }
+  }
+</style>
+</head>
+<body data-mode="mole">
+<noscript><p style="color:#ffb347;padding:20px;font-family:sans-serif">M.O.L.E necesita JavaScript activado.</p></noscript>
+<header>
+  <div class="brand"><div class="orb"></div><h1>M.O.L.E</h1></div>
+  <div id="status" role="status" aria-live="polite">Cargando el reconocedor de manos…</div>
+  <div class="modes" id="modes"><button data-m="mole" class="on">M.O.L.E</button><button data-m="draw">Pizarra</button></div>
+  <button id="btnSet" aria-haspopup="dialog">⚙ Ajustes</button>
+</header>
+<main>
+  <section>
+    <div class="stage" id="stage">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="holo3d"></canvas>
+      <canvas id="overlay"></canvas>
+      <div class="empty" id="empty"><b>Cámara apagada</b>Pulsa «Iniciar M.O.L.E» para empezar.</div>
+      <div class="hud" id="hud">FPS --</div>
+      <div class="dock">
+        <div class="seg" id="tools">
+          <button data-t="draw" class="on" title="Índice levantado = pintar">✏️ Pintar</button>
+          <button data-t="erase" title="Palma abierta = borrar">🧽 Borrar</button>
+          <button data-t="look" title="Sin pintar">👁️ Mirar</button>
+        </div>
+        <div class="sw" id="sw" aria-label="Color"></div>
+        <input type="range" id="size" min="3" max="28" value="9" aria-label="Grosor">
+        <button id="undo" title="Deshacer (o pulgar abajo)">↩︎</button>
+        <button id="clear">Limpiar</button>
+        <button id="save">Guardar</button>
+      </div>
+    </div>
+    <div class="bar"><button id="btnCam" class="primary" disabled>Iniciar M.O.L.E</button></div>
+  </section>
+  <aside>
+    <div class="box only-mole">
+      <h2>Asistente</h2>
+      <div class="assist"><div class="aorb" id="aorb"></div><div><div id="astate">Apagado</div><span id="micState">Micrófono: sin iniciar</span></div></div>
+      <div id="log" class="log" aria-live="polite"><div class="jv">M.O.L.E: Pulsa «Iniciar M.O.L.E» y háblame: «¿qué ves?» o «cuánto es 12 por 7».</div></div>
+      <div class="heard" id="heard" aria-live="polite"></div>
+      <div class="meter" title="Nivel del micrófono"><i id="meter"></i></div>
+    </div>
+    <div class="box">
+      <h2>Lo que veo</h2>
+      <div class="big" id="gesture"><span>Gesto</span>—</div>
+      <div class="big" id="expr"><span>Expresión</span>—</div>
+      <div id="people" class="row" style="margin:0 0 8px">Personas: 0</div>
+      <ul id="list"><li><span>Activa «Objetos» en Ajustes</span></li></ul>
+    </div>
+    <div class="box only-draw">
+      <h2>Cómo se usa</h2>
+      <p class="guide"><b>☝️ Índice</b> pinta · <b>🤏 Pinza</b> sobre un trazo lo coge y lo mueve<br><b>🤏 + 🤏</b> con dos manos amplía o reduce · estíralas rápido para deshacerlo todo<br><b>✌️</b> cambia de color · <b>👎</b> mantenido deshace · <b>🖐️</b> borra en modo Borrar</p>
+    </div>
+  </aside>
+</main>
+
+<div id="scrim"></div>
+<section id="settings" role="dialog" aria-label="Ajustes" aria-hidden="true">
+  <header><h2 style="margin:0;font-size:1.1rem">Ajustes</h2><button id="btnSetClose" aria-label="Cerrar">✕</button></header>
+  <h3>Cámara</h3>
+  <div class="field">Cámara <select id="selCam" aria-label="Cámara"></select></div>
+  <div class="field">Frontal / trasera <button id="btnFlip">Cambiar</button></div>
+  <h3>Detección</h3>
+  <label class="opt"><span>Esqueleto de mano</span><input type="checkbox" id="optSkel" checked></label>
+  <label class="opt"><span>Mostrar gesto detectado</span><input type="checkbox" id="optLabels" checked></label>
+  <label class="opt"><span>Objetos<small>Más lento. Se activa solo si preguntas «¿qué ves?»</small></span><input type="checkbox" id="optObj"></label>
+  <label class="opt"><span>Cara y expresiones<small>Más lento</small></span><input type="checkbox" id="optFace"></label>
+  <label class="opt"><span>Contorno de cara</span><input type="checkbox" id="optMesh"></label>
+  <label class="opt"><span>Aislar persona</span><input type="checkbox" id="optIso"></label>
+  <label class="opt"><span>Estabilizar objetos</span><input type="checkbox" id="optStab" checked></label>
+  <label class="opt"><span>Visor limpio<small>Marcas en las esquinas y puntos en lo detectado</small></span><input type="checkbox" id="optHUD" checked></label>
+  <div class="field">Modelo de objetos <select id="model"><option value="lite0" selected>Rápido</option><option value="lite2">Preciso</option></select></div>
+  <div class="field">Confianza <span id="confVal">35%</span><input type="range" id="conf" min="15" max="90" value="35"></div>
+  <h3>Voz</h3>
+  <label class="opt"><span>Respuesta en voz</span><input type="checkbox" id="optVoice" checked></label>
+  <label class="opt"><span>Solo responder si digo «M.O.L.E»<small>Escucha continua con palabra clave</small></span><input type="checkbox" id="optWake"></label>
+  <h3>Pizarra</h3>
+  <label class="opt"><span>Paleta de colores flotante</span><input type="checkbox" id="optVR" checked></label>
+  <label class="opt"><span>Coger solo el trazo elegido</span><input type="checkbox" id="optPick" checked></label>
+  <details><summary>Gestos disponibles</summary>
+    <p class="guide">Números 1–5 · puño · 👍 · 👎 · 👌 · 🤘 · 🤟 · 🤙 · 🔫 · 🖖 · saludo 👋 · ☝️ · ✌️ · 🤏</p></details>
+</section>
+
+<script>
+setTimeout(() => { const st = document.getElementById('status'); if (st && /^Cargando/.test(st.textContent)) st.textContent = 'Tarda más de lo normal… revisa tu conexión (los modelos se descargan de internet).'; }, 20000);
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script type="module">
+import { FilesetResolver, ObjectDetector, GestureRecognizer, FaceLandmarker, ImageSegmenter, DrawingUtils }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const G = "https://storage.googleapis.com/mediapipe-models/";
+const GESTURE_MODEL = G + "gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task";
+const FACE_MODEL = G + "face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+const SEG_MODEL = G + "image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite";
+const OBJ_MODELS = {
+  lite2: G + "object_detector/efficientdet_lite2/float32/1/efficientdet_lite2.tflite",
+  lite0: G + "object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
+};
+const ES = {person:'persona',bicycle:'bicicleta',car:'coche',motorcycle:'moto',airplane:'avión',bus:'autobús',train:'tren',truck:'camión',boat:'barco','traffic light':'semáforo','fire hydrant':'boca de incendios','stop sign':'señal de stop','parking meter':'parquímetro',bench:'banco',bird:'pájaro',cat:'gato',dog:'perro',horse:'caballo',sheep:'oveja',cow:'vaca',elephant:'elefante',bear:'oso',zebra:'cebra',giraffe:'jirafa',backpack:'mochila',umbrella:'paraguas',handbag:'bolso',tie:'corbata',suitcase:'maleta',frisbee:'frisbee',skis:'esquís',snowboard:'snowboard','sports ball':'pelota',kite:'cometa','baseball bat':'bate','baseball glove':'guante de béisbol',skateboard:'monopatín',surfboard:'tabla de surf','tennis racket':'raqueta',bottle:'botella','wine glass':'copa',cup:'taza',fork:'tenedor',knife:'cuchillo',spoon:'cuchara',bowl:'bol',banana:'plátano',apple:'manzana',sandwich:'sándwich',orange:'naranja',broccoli:'brócoli',carrot:'zanahoria','hot dog':'perrito caliente',pizza:'pizza',donut:'donut',cake:'tarta',chair:'silla',couch:'sofá','potted plant':'planta',bed:'cama','dining table':'mesa',toilet:'inodoro',tv:'televisor',laptop:'portátil',mouse:'ratón',remote:'mando',keyboard:'teclado','cell phone':'móvil',microwave:'microondas',oven:'horno',toaster:'tostadora',sink:'lavabo',refrigerator:'nevera',book:'libro',clock:'reloj',vase:'jarrón',scissors:'tijeras','teddy bear':'peluche','hair drier':'secador',toothbrush:'cepillo de dientes'};
+const MP_GES = { Closed_Fist:['Puño ✊','fist'], Open_Palm:['Palma abierta 🖐️','palm'], Pointing_Up:['Señalando ☝️','point'], Thumb_Down:['Pulgar abajo 👎','thumbdown'], Thumb_Up:['Pulgar arriba 👍','thumbup'], Victory:['Victoria ✌️','victory'], ILoveYou:['Te quiero 🤟','love'] };
+const NUM = ['0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣'];
+const COLORS = ['#ff5d8f','#ffb347','#ffe66d','#5ee6a8','#5ec8ff','#b69cff','#ffffff'];
+
+const $ = id => document.getElementById(id);
+const video = $('video'), canvas = $('overlay'), stage = $('stage');
+let objDet = null, gesRec = null, faceLm = null, segmenter = null;
+const loading = {};
+let stream = null, running = false, facing = 'user', lastVideoTime = -1, visionPromise = null, tracks = [];
+function setStatus(t){ $('status').textContent = t; }
+function colorFor(c){ let h = 0; for (const ch of c) h = (h * 31 + ch.charCodeAt(0)) % 360; return c === 'person' ? '#ff5d8f' : `hsl(${h},90%,64%)`; }
+
+/* ---------- Carga diferida: solo las manos al inicio ---------- */
+const withFallback = async make => { try { return await make('GPU'); } catch { return await make('CPU'); } };
+const makers = {
+  ges: v => withFallback(d => GestureRecognizer.createFromOptions(v, { baseOptions:{ modelAssetPath:GESTURE_MODEL, delegate:d }, runningMode:'VIDEO', numHands:2, minHandDetectionConfidence:.4, minHandPresenceConfidence:.4, minTrackingConfidence:.4 })),
+  face: v => withFallback(d => FaceLandmarker.createFromOptions(v, { baseOptions:{ modelAssetPath:FACE_MODEL, delegate:d }, runningMode:'VIDEO', numFaces:2, outputFaceBlendshapes:true })),
+  obj: v => withFallback(d => ObjectDetector.createFromOptions(v, { baseOptions:{ modelAssetPath:OBJ_MODELS[$('model').value], delegate:d }, runningMode:'VIDEO', maxResults:30, scoreThreshold:0.15 })),
+  seg: v => withFallback(d => ImageSegmenter.createFromOptions(v, { baseOptions:{ modelAssetPath:SEG_MODEL, delegate:d }, runningMode:'VIDEO', outputConfidenceMasks:true, outputCategoryMask:false })),
+};
+const names = { ges:'manos', face:'cara', obj:'objetos', seg:'persona' };
+async function ensure(k){
+  loading[k] ??= (async () => {
+    setStatus(`Cargando ${names[k]}…`);
+    visionPromise ??= FilesetResolver.forVisionTasks(WASM);
+    const m = await makers[k](await visionPromise);
+    ({ ges:() => gesRec = m, face:() => faceLm = m, obj:() => objDet = m, seg:() => segmenter = m })[k]();
+    setStatus(running ? 'Detectando…' : 'Listo. Pulsa «Iniciar M.O.L.E».');
+  })().catch(e => { loading[k] = null; setStatus(`No se pudo cargar ${names[k]}: ${e.message}`); throw e; });
+  return loading[k];
+}
+const lazy = { optFace:'face', optObj:'obj', optIso:'seg' };
+Object.entries(lazy).forEach(([id, k]) => $(id).onchange = () => { if ($(id).checked) ensure(k).catch(() => $(id).checked = false); if (k === 'obj') tracks = []; });
+ensure('ges').then(() => $('btnCam').disabled = false).catch(() => {});
+
+/* ---------- Cámara ---------- */
+async function listCameras(){
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    const sel = $('selCam'); sel.innerHTML = '';
+    devs.forEach((d, i) => { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || `Cámara ${i+1}`; sel.append(o); });
+  } catch {}
+}
+async function startCamera(deviceId){
+  if (!navigator.mediaDevices?.getUserMedia) { setStatus('La cámara necesita https o localhost.'); return; }
+  stopCamera();
+  const v = deviceId ? { deviceId:{ exact:deviceId }, width:{ ideal:640 }, height:{ ideal:480 }, frameRate:{ ideal:30 } } : { facingMode:facing, width:{ ideal:640 }, height:{ ideal:480 }, frameRate:{ ideal:30 } };
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio:false, video:v }); }
+  catch (e) {
+    const why = { NotAllowedError:'permiso denegado: permite la cámara en el candado de la barra de direcciones', NotFoundError:'no se encontró ninguna cámara', NotReadableError:'otra aplicación está usando la cámara', OverconstrainedError:'esa cámara no admite la resolución pedida' }[e.name] || e.message;
+    setStatus('No se pudo acceder a la cámara: ' + why + '.'); return;
+  }
+  video.srcObject = stream;
+  await new Promise(r => video.onloadedmetadata = r);
+  await video.play();
+  const s = stream.getVideoTracks()[0].getSettings();
+  stage.classList.toggle('mirror', s.facingMode ? s.facingMode === 'user' : facing === 'user');
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  await listCameras(); if (s.deviceId) $('selCam').value = s.deviceId;
+  running = true; lastVideoTime = -1; tracks = []; $('empty').style.display = 'none';
+  updateBtn(); setStatus('Detectando…'); loop();
+}
+function stopCamera(){
+  running = false;
+  stream?.getTracks().forEach(t => t.stop());
+  stream = null; video.srcObject = null;
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+  updateBtn(); $('hud').textContent = 'FPS --'; $('empty').style.display = '';
+}
+
+/* ---------- Pizarra: trazos en coordenadas locales + transformación (mover/ampliar) ---------- */
+let strokes = [], T = { x:0, y:0, s:1 }, cur = {}, sm = {}, grab = null, tool = 'draw', color = COLORS[0];
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const toLocal = (x, y) => [(x - T.x) / T.s, (y - T.y) / T.s];
+const toScreen = p => [p[0] * T.s + T.x, p[1] * T.s + T.y];
+function bbox(list = strokes){
+  if (!list.length) return null;
+  let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
+  list.forEach(st => st.pts.forEach(p => { const [x, y] = toScreen(p); x1 = Math.min(x1, x); y1 = Math.min(y1, y); x2 = Math.max(x2, x); y2 = Math.max(y2, y); }));
+  return { x:x1, y:y1, w:x2 - x1, h:y2 - y1 };
+}
+function drawOne(ctx, st){
+  ctx.strokeStyle = ctx.fillStyle = st.color; ctx.lineWidth = st.w; ctx.shadowColor = st.color; ctx.shadowBlur = strokes.length > 20 ? 0 : 8;
+  const p = st.pts;
+  if (p.length === 1) { ctx.beginPath(); ctx.arc(p[0][0], p[0][1], st.w / 2, 0, 7); ctx.fill(); return; }
+  ctx.beginPath(); ctx.moveTo(p[0][0], p[0][1]);
+  for (let i = 1; i < p.length - 1; i++) ctx.quadraticCurveTo(p[i][0], p[i][1], (p[i][0] + p[i+1][0]) / 2, (p[i][1] + p[i+1][1]) / 2);
+  ctx.lineTo(p.at(-1)[0], p.at(-1)[1]); ctx.stroke();
+}
+function drawStrokes(ctx){
+  ctx.save(); ctx.translate(T.x, T.y); ctx.scale(T.s, T.s); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  strokes.forEach(st => drawOne(ctx, st));
+  ctx.restore();
+}
+
+/* ---------- Borrado con animación (estirar dos pinzas) ---------- */
+let dis = null, lastCleared = null, spread = [], sel = null;
+function startDissolve(mx, now){
+  const list = strokes, avg = (st, k) => st.pts.reduce((s, p) => s + p[k], 0) / st.pts.length;
+  dis = { t0:now, T:{ ...T }, mx:(mx - T.x) / T.s, list, c:list.map(st => [avg(st, 0), avg(st, 1)]) };
+  lastCleared = { list, T:{ ...T } }; strokes = []; T = { x:0, y:0, s:1 }; grab = null;
+}
+function drawDissolve(ctx, W, now){
+  const k = (now - dis.t0) / 750; if (k >= 1) { dis = null; return; }
+  const e = k * k, D = dis.T;
+  ctx.save(); ctx.translate(D.x, D.y); ctx.scale(D.s, D.s); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalAlpha = 1 - k;
+  dis.list.forEach((st, i) => {
+    const [cx, cy] = dis.c[i], dir = cx < dis.mx ? -1 : 1;
+    ctx.save(); ctx.translate(cx + dir * e * W * .6 / D.s, cy); ctx.rotate(dir * e * 1.2); ctx.scale(1 - k * .6, 1 - k * .6); ctx.translate(-cx, -cy);
+    drawOne(ctx, st); ctx.restore();
+  });
+  ctx.restore();
+}
+function undo(){
+  dis = null;
+  if (!strokes.length && lastCleared) { strokes = lastCleared.list; T = lastCleared.T; lastCleared = null; }
+  else strokes.pop();
+}
+
+/* ---------- Trazo más cercano (selección con la pinza) ---------- */
+function segD(p, a, b){
+  const dx = b[0] - a[0], dy = b[1] - a[1], l = dx * dx + dy * dy || 1, t = clamp(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l, 0, 1);
+  return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+}
+function nearest(p, maxD){
+  let best = null, bd = maxD;
+  strokes.forEach(st => {
+    const s = st.pts.map(toScreen);
+    for (let i = 0; i < Math.max(1, s.length - 1); i++) { const d = segD(p, s[i], s[i+1] || s[i]); if (d < bd) { bd = d; best = st; } }
+  });
+  return best;
+}
+
+/* ---------- Paleta flotante tipo realidad virtual ---------- */
+let palHover = -1, palDwell = { i:-1, t0:0 };
+const palPos = (i, W, H, mir, now) => {
+  const r = Math.min(W * .03, H / (COLORS.length * 2.6)), sp = r * 2.5;
+  return [mir ? W * .94 : W * .06, H / 2 + (i - (COLORS.length - 1) / 2) * sp + Math.sin(now / 700 + i) * r * .12, r];
+};
+function inPal(p, W, H, mir, now){
+  const [x, y0, r] = palPos(0, W, H, mir, now), y1 = palPos(COLORS.length - 1, W, H, mir, now)[1];
+  return Math.abs(p[0] - x) < r * 1.8 && p[1] > y0 - r * 1.5 && p[1] < y1 + r * 1.5;
+}
+function drawPalette(ctx, W, H, mir, now){
+  const [x0, y0, r0] = palPos(0, W, H, mir, now), y1 = palPos(COLORS.length - 1, W, H, mir, now)[1];
+  ctx.save(); ctx.fillStyle = '#0a0814aa'; ctx.beginPath(); ctx.roundRect(x0 - r0 * 1.6, y0 - r0 * 1.7, r0 * 3.2, y1 - y0 + r0 * 3.4, r0 * 1.6); ctx.fill();
+  COLORS.forEach((c, i) => {
+    const on = c === color, [x, y] = palPos(i, W, H, mir, now), r = r0 * (on || palHover === i ? 1.2 : 1);
+    ctx.shadowColor = c; ctx.shadowBlur = on ? 28 : 12;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = c; ctx.fill(); ctx.shadowBlur = 0;
+    const g = ctx.createRadialGradient(x - r * .35, y - r * .35, r * .1, x, y, r);
+    g.addColorStop(0, '#ffffffcc'); g.addColorStop(.45, '#ffffff00'); g.addColorStop(1, '#00000066'); ctx.fillStyle = g; ctx.fill();
+    if (on) { ctx.strokeStyle = '#fff'; ctx.lineWidth = r0 * .12; ctx.beginPath(); ctx.arc(x, y, r + r0 * .2, 0, 7); ctx.stroke(); }
+    if (palHover === i && !on && palDwell.i === i) { ctx.strokeStyle = '#5ee6ff'; ctx.lineWidth = r0 * .16; ctx.beginPath(); ctx.arc(x, y, r + r0 * .2, -1.57, -1.57 + 6.28 * clamp((now - palDwell.t0) / 600, 0, 1)); ctx.stroke(); }
+  });
+  ctx.restore();
+}
+function nextColor(){ setColor(COLORS[(COLORS.indexOf(color) + 1) % COLORS.length]); }
+function setColor(c){ color = c; [...$('sw').children].forEach(i => i.classList.toggle('on', i.dataset.c === c)); }
+COLORS.forEach(c => { const i = document.createElement('i'); i.style.background = c; i.dataset.c = c; i.onclick = () => setColor(c); $('sw').append(i); });
+setColor(color);
+$('tools').onclick = e => { const b = e.target.closest('button'); if (!b) return; tool = b.dataset.t; [...$('tools').children].forEach(x => x.classList.toggle('on', x === b)); };
+$('undo').onclick = undo;
+$('clear').onclick = () => { strokes = []; cur = {}; T = { x:0, y:0, s:1 }; };
+$('save').onclick = () => {
+  if (!video.videoWidth) return;
+  const c = document.createElement('canvas'); c.width = canvas.width; c.height = canvas.height;
+  const x = c.getContext('2d');
+  if (stage.classList.contains('mirror')) { x.translate(c.width, 0); x.scale(-1, 1); }
+  x.drawImage(video, 0, 0, c.width, c.height); x.drawImage(canvas, 0, 0);
+  const a = document.createElement('a'); a.download = 'pizarra.png'; a.href = c.toDataURL('image/png'); a.click();
+};
+
+// Acciones por gesto mantenido (con enfriamiento)
+const holds = {}, fired = {};
+function hold(key, cond, ms, fn, now){
+  if (!cond) { delete holds[key]; return; }
+  holds[key] ??= now;
+  if (now - holds[key] > ms && now - (fired[key] || 0) > 1100) { fired[key] = now; fn(); }
+}
+
+function processHands(hands, W, H, now){
+  const mir = stage.classList.contains('mirror'), vr = $('optVR').checked;
+  // paleta VR: pinza = elegir al instante; señalar = elegir tras 0,6 s
+  palHover = -1;
+  if (vr) hands.forEach(h => {
+    if (['fist', 'palm', 'wave', 'ok'].includes(h.kind)) return;
+    const q = h.kind === 'pinch' ? h.pp : h.tip;
+    COLORS.forEach((c, i) => {
+      const [x, y, r] = palPos(i, W, H, mir, now);
+      if (Math.hypot(q[0] - x, q[1] - y) > r * 1.4) return;
+      palHover = i;
+      if (c === color) return;
+      if (h.kind === 'pinch') setColor(c);
+      else if (palDwell.i !== i) palDwell = { i, t0:now };
+      else if (now - palDwell.t0 > 600) setColor(c);
+    });
+  });
+  if (palHover < 0) palDwell = { i:-1, t0:0 };
+  // pintar
+  const seen = new Set();
+  hands.forEach(h => {
+    if (h.kind !== 'draw' || tool !== 'draw' || grab || (vr && inPal(h.tip, W, H, mir, now))) { delete sm[h.i]; return; }
+    seen.add(h.i);
+    const raw = h.tip, prev = sm[h.i];
+    const t = sm[h.i] = prev ? [prev[0] + (raw[0] - prev[0]) * .75, prev[1] + (raw[1] - prev[1]) * .75] : raw;
+    const [lx, ly] = toLocal(t[0], t[1]);
+    let c = cur[h.i];
+    if (!c) { c = cur[h.i] = { color, w: +$('size').value / T.s * (W / 640), pts:[] }; strokes.push(c); }
+    c.miss = 0;
+    const l = c.pts.at(-1);
+    if (!l || Math.hypot(lx - l[0], ly - l[1]) * T.s > 2) c.pts.push([lx, ly]);
+  });
+  Object.keys(cur).forEach(k => { if (!seen.has(+k) && (cur[k].miss = (cur[k].miss || 0) + 1) > 3) delete cur[k]; });
+
+  // agarrar / ampliar / borrar con pinza
+  const pin = hands.filter(h => h.kind === 'pinch');
+  if (pin.length < 2) spread = [];
+  if (pin.length >= 2 && strokes.length) {
+    const [a, b] = pin, d = Math.hypot(a.pp[0] - b.pp[0], a.pp[1] - b.pp[1]) || 1;
+    const m = [(a.pp[0] + b.pp[0]) / 2, (a.pp[1] + b.pp[1]) / 2], dx = Math.abs(a.pp[0] - b.pp[0]);
+    spread.push([now, dx]); while (spread.length && now - spread[0][0] > 450) spread.shift();
+    const mn = Math.min(...spread.map(v => v[1]));
+    if (dx - mn > W * .3 && dx > mn * 1.8 && Math.abs(a.pp[1] - b.pp[1]) < dx * .8) { spread = []; startDissolve(m[0], now); }
+    else {
+      if (grab?.mode !== 2) grab = { mode:2, d0:d, s0:T.s, a:toLocal(m[0], m[1]) };
+      T.s = clamp(grab.s0 * d / grab.d0, .2, 8); T.x = m[0] - grab.a[0] * T.s; T.y = m[1] - grab.a[1] * T.s;
+    }
+  } else if (pin.length === 1 && strokes.length) {
+    const p = pin[0].pp;
+    if (!grab || grab.mode === 2) {
+      if ($('optPick').checked) { const st = nearest(p, W * .07); grab = st ? { mode:3, st, a:toLocal(p[0], p[1]), orig:st.pts.map(q => [q[0], q[1]]) } : null; }
+      else { const b = bbox(), pad = W * .1; grab = b && p[0] > b.x - pad && p[0] < b.x + b.w + pad && p[1] > b.y - pad && p[1] < b.y + b.h + pad ? { mode:1, a:toLocal(p[0], p[1]) } : null; }
+    }
+    if (grab?.mode === 3) { const [lx, ly] = toLocal(p[0], p[1]), ox = lx - grab.a[0], oy = ly - grab.a[1]; grab.st.pts = grab.orig.map(q => [q[0] + ox, q[1] + oy]); }
+    else if (grab) { T.x = p[0] - grab.a[0] * T.s; T.y = p[1] - grab.a[1] * T.s; }
+  } else grab = null;
+
+  // borrar con la palma
+  if (tool === 'erase') hands.filter(h => h.kind === 'palm').forEach(h => {
+    const R = W * .07;
+    strokes = strokes.filter(st => !st.pts.some(p => { const s = toScreen(p); return Math.hypot(s[0] - h.palm[0], s[1] - h.palm[1]) < R; }));
+  });
+
+  hold('color', hands.some(h => h.kind === 'victory'), 450, nextColor, now);
+  hold('undo', hands.some(h => h.kind === 'thumbdown'), 700, undo, now);
+}
+
+/* ---------- Dibujo HUD ---------- */
+function drawBrackets(ctx, x, y, w, h, len, color, lw){
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'square';
+  const l = Math.min(len, w / 2, h / 2); ctx.beginPath();
+  ctx.moveTo(x, y + l); ctx.lineTo(x, y); ctx.lineTo(x + l, y);
+  ctx.moveTo(x + w - l, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + l);
+  ctx.moveTo(x + w, y + h - l); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - l, y + h);
+  ctx.moveTo(x + l, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - l); ctx.stroke();
+}
+function drawLabel(ctx, text, x, y, color, fs, mirrored){
+  ctx.font = `600 ${fs}px "Avenir Next","Segoe UI",system-ui,sans-serif`;
+  const tw = ctx.measureText(text).width + 14;
+  ctx.save();
+  if (mirrored) { ctx.translate(x * 2 + tw, 0); ctx.scale(-1, 1); }
+  ctx.globalAlpha = .9; ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(x, y, tw, fs + 10, 6); ctx.fill();
+  ctx.globalAlpha = 1; ctx.fillStyle = '#14111f'; ctx.fillText(text, x + 7, y + fs + 1);
+  ctx.restore();
+}
+
+
+/* ---------- Hologramas ---------- */
+const holos = [], holoGrab = {};
+
+const HOLO_LIST = [['reactor','Reactor'],['atomo','Átomo'],['cubo','Cubo'],['esfera','Esfera / Tierra'],['reloj','Reloj'],['panel','Panel de datos'],['tetraedro','Tetraedro'],['octaedro','Octaedro'],['dodecaedro','Dodecaedro'],['icosaedro','Icosaedro'],['diamante','Diamante'],['piramide','Pirámide'],['cilindro','Cilindro'],['toro','Toro'],['nudo','Nudo'],['rubik','Cubo de Rubik'],['adn','ADN'],['molecula','Molécula de agua'],['saturno','Saturno'],['solar','Sistema solar'],['galaxia','Galaxia'],['cohete','Cohete'],['avion','Avión'],['coche','Coche'],['satelite','Satélite'],['robot','Robot'],['corazon','Corazón'],['estrella','Estrella'],['engranaje','Engranaje'],['tornado','Tornado'],['radar','Radar']];
+const HOLO_TYPES = Object.fromEntries(HOLO_LIST.map(([k]) => [k, k]));
+Object.assign(HOLO_TYPES, { globo:'esfera', tierra:'esfera', planeta:'esfera', nucleo:'reactor', nave:'cohete', helice:'adn', cubo:'cubo' });
+const HOLO_RE = new RegExp('holograma|' + Object.keys(HOLO_TYPES).join('|'));
+const hc = $('holo3d'), HCOL = 0x5ee6ff, rotGrab = {};
+let R3, scene3, cam3;
+const hLines = (geo, m) => new THREE.LineSegments(geo, m);
+const hLoop = (n, f, m) => { const p = []; for (let i = 0; i < n; i++) p.push(f(i / n * 6.2832)); return new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(p), m); };
+const geoP = pts => new THREE.BufferGeometry().setFromPoints(pts);
+const MODELS = {
+  tetraedro: K => K.p(new THREE.TetrahedronGeometry(1.4)),
+  octaedro: K => K.p(new THREE.OctahedronGeometry(1.4)),
+  dodecaedro: K => K.p(new THREE.DodecahedronGeometry(1.3)),
+  icosaedro: K => { K.p(new THREE.IcosahedronGeometry(1.3)); K.p(new THREE.IcosahedronGeometry(.6)).userData.spin = [1, .7, 0]; },
+  diamante: K => { K.p(new THREE.OctahedronGeometry(1.1)).scale.set(.9, 1.5, .9); },
+  piramide: K => K.p(new THREE.ConeGeometry(1.3, 1.9, 4)),
+  cilindro: K => K.p(new THREE.CylinderGeometry(.8, .8, 1.9, 16), 0, 0, 0, 0, 0, 0, 10),
+  toro: K => K.p(new THREE.TorusGeometry(1, .38, 10, 28), 0, 0, 0, 0, 0, 0, 1),
+  nudo: K => K.p(new THREE.TorusKnotGeometry(.85, .28, 90, 8), 0, 0, 0, 0, 0, 0, 1),
+  rubik: K => { for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++) if (x || y || z) K.p(new THREE.BoxGeometry(.46, .46, .46), x * .52, y * .52, z * .52); },
+  adn: K => { const a = [], b = [], r = []; for (let i = 0; i <= 60; i++) { const t = i / 60 * 12.57, y = (i / 60 - .5) * 3.2, s = Math.sin(t) * .6, c = Math.cos(t) * .6; a.push(new K.V(c, y, s)); b.push(new K.V(-c, y, -s)); if (i % 3 === 0) r.push(a[i], b[i]); } K.ln(a); K.ln(b); K.sg(r); },
+  molecula: K => { K.p(new THREE.IcosahedronGeometry(.42, 1), 0, 0, 0, 0, 0, 0, 1); [-.95, .95].forEach(x => K.p(new THREE.IcosahedronGeometry(.25, 1), x, -.6, 0, 0, 0, 0, 1)); K.sg([new K.V(0, 0, 0), new K.V(-.95, -.6, 0), new K.V(0, 0, 0), new K.V(.95, -.6, 0)]); },
+  saturno: K => { K.add(hLines(new THREE.WireframeGeometry(new THREE.SphereGeometry(.75, 14, 10)), K.m)); const g = K.add(new THREE.Group()); g.rotation.set(1.25, 0, .35); [1.15, 1.4, 1.65].forEach(r => g.add(K.circ(r))); },
+  solar: K => { K.p(new THREE.IcosahedronGeometry(.3, 1), 0, 0, 0, 0, 0, 0, 1); [.6, .95, 1.3, 1.65].forEach((r, i) => { const t = K.add(new THREE.Group()); t.rotation.x = Math.PI / 2 + (i % 2 ? -.12 : .12); t.add(K.circ(r)); const pv = new THREE.Group(); pv.userData.spin = [0, 0, 2.2 - i * .5]; t.add(pv); const e = hLines(new THREE.EdgesGeometry(new THREE.OctahedronGeometry(.07 + i * .02)), K.m); e.position.x = r; pv.add(e); }); },
+  galaxia: K => { const pts = []; for (let i = 0; i < 700; i++) { const r = Math.pow(Math.random(), .7) * 1.7, a = r * 2.4 + (i % 2) * Math.PI + (Math.random() - .5) * .6; pts.push(new K.V(Math.cos(a) * r, (Math.random() - .5) * .12 * (2 - r), Math.sin(a) * r)); } const pm = new THREE.PointsMaterial({ color:HCOL, size:2.5, sizeAttenuation:false, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false }); K.mats.push(pm); K.add(new THREE.Points(geoP(pts), pm)).userData.spin = [0, .35, 0]; },
+  cohete: K => { K.p(new THREE.CylinderGeometry(.35, .35, 1.6, 12), 0, 0, 0, 0, 0, 0, 10); K.p(new THREE.ConeGeometry(.35, .7, 12), 0, 1.15, 0, 0, 0, 0, 10); [0, 2.094, 4.189].forEach(a => K.p(new THREE.BoxGeometry(.06, .55, .4), Math.sin(a) * .45, -.75, Math.cos(a) * .45, 0, a, 0)); K.p(new THREE.ConeGeometry(.22, .55, 8), 0, -1.2, 0, Math.PI, 0, 0, 10); K.p(new THREE.TorusGeometry(.13, .02, 6, 12), 0, .25, .35, 0, 0, 0, 1); },
+  avion: K => { K.p(new THREE.CylinderGeometry(.16, .16, 2.2, 10), 0, 0, 0, 0, 0, Math.PI / 2, 10); K.p(new THREE.ConeGeometry(.16, .5, 10), 1.35, 0, 0, 0, 0, -Math.PI / 2, 10); K.p(new THREE.BoxGeometry(.55, .04, 2.6), .1, 0, 0); K.p(new THREE.BoxGeometry(.3, .03, .9), -1, .02, 0); K.p(new THREE.BoxGeometry(.35, .45, .03), -1, .28, 0); },
+  coche: K => { K.p(new THREE.BoxGeometry(2.3, .5, 1.1), 0, -.1, 0); K.p(new THREE.BoxGeometry(1.2, .42, .95), -.1, .33, 0); [-.75, .75].forEach(x => [-.55, .55].forEach(z => K.p(new THREE.CylinderGeometry(.28, .28, .16, 14), x, -.5, z, Math.PI / 2, 0, 0, 10))); },
+  satelite: K => { K.p(new THREE.BoxGeometry(.6, .6, .6)); [-1, 1].forEach(s => { K.p(new THREE.BoxGeometry(1.1, .04, .55), s * .95, 0, 0); K.sg([new K.V(s * .4, 0, 0), new K.V(s * .4, 0, 0)]); }); K.p(new THREE.ConeGeometry(.3, .3, 10), 0, .45, 0, 0, 0, 0, 10); K.sg([new K.V(0, .6, 0), new K.V(0, 1, 0)]); },
+  robot: K => { K.p(new THREE.BoxGeometry(.75, .6, .6), 0, 1.15, 0); K.p(new THREE.BoxGeometry(1.1, 1.2, .65), 0, .2, 0); [-.8, .8].forEach(x => K.p(new THREE.BoxGeometry(.25, 1, .25), x, .2, 0)); [-.28, .28].forEach(x => K.p(new THREE.BoxGeometry(.3, .9, .3), x, -.85, 0)); K.sg([new K.V(0, 1.45, 0), new K.V(0, 1.8, 0)]); K.p(new THREE.OctahedronGeometry(.07), 0, 1.85, 0); [-.17, .17].forEach(x => K.p(new THREE.BoxGeometry(.14, .08, .02), x, 1.2, .31)); },
+  corazon: K => { const L = [-.35, -.18, 0, .18, .35].map(z => { const s = 1 - Math.abs(z) * .9, pts = []; for (let i = 0; i < 64; i++) { const t = i / 64 * 6.2832; pts.push(new K.V(16 * Math.sin(t) ** 3 / 13 * s, (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 13 * s + .1, z)); } K.add(new THREE.LineLoop(geoP(pts), K.m)); return pts; }); const c = []; for (let i = 0; i < 64; i += 4) for (let j = 0; j < 4; j++) c.push(L[j][i], L[j + 1][i]); K.sg(c); },
+  estrella: K => { const P = z => { const a = []; for (let i = 0; i < 10; i++) { const r = i % 2 ? .55 : 1.4, t = i * .6283; a.push(new K.V(Math.sin(t) * r, Math.cos(t) * r, z)); } return a; }, A = P(.2), B = P(-.2), c = []; K.add(new THREE.LineLoop(geoP(A), K.m)); K.add(new THREE.LineLoop(geoP(B), K.m)); A.forEach((a, i) => { c.push(a, B[i], a, new K.V(0, 0, .45), B[i], new K.V(0, 0, -.45)); }); K.sg(c); },
+  engranaje: K => { const O = z => { const a = []; for (let i = 0; i < 12; i++) { const t = i * .5236; [[.95, -.13], [1.25, -.08], [1.25, .08], [.95, .13]].forEach(([r, d]) => a.push(new K.V(Math.cos(t + d) * r, Math.sin(t + d) * r, z))); } return a; }, A = O(.18), B = O(-.18), c = []; K.add(new THREE.LineLoop(geoP(A), K.m)); K.add(new THREE.LineLoop(geoP(B), K.m)); for (let i = 0; i < A.length; i += 2) c.push(A[i], B[i]); K.sg(c); [.18, -.18].forEach(z => { const h = K.circ(.35); h.position.z = z; K.add(h); }); },
+  tornado: K => { for (let i = 0; i < 9; i++) { const r = .18 + i * .15, a = []; for (let k = 0; k <= 40; k++) a.push(new K.V(Math.cos(k / 40 * 4.7) * r, Math.sin(k / 40 * 4.7) * r, 0)); const l = K.ln(a); l.rotation.x = Math.PI / 2; l.position.y = -1.1 + i * .27; l.userData.spin = [0, 0, (i % 2 ? -1 : 1) * (1.2 + i * .25)]; } },
+  radar: K => { [.4, .8, 1.2, 1.6].forEach(r => K.add(K.circ(r))); K.sg([new K.V(-1.6, 0, 0), new K.V(1.6, 0, 0), new K.V(0, -1.6, 0), new K.V(0, 1.6, 0)]); const sw = K.add(new THREE.Group()); sw.userData.spin = [0, 0, -1.6]; sw.add(hLines(geoP([new K.V(), new K.V(1.6, 0, 0)]), K.m)); },
+};
+function buildHolo(type, mats){
+  const m = mats[0], V = THREE.Vector3, g = new THREE.Group(), add = o => (g.add(o), o);
+  const circ = r => hLoop(64, a => new V(Math.cos(a) * r, Math.sin(a) * r, 0), m);
+  const p = (geo, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, th = 20) => { const l = hLines(new THREE.EdgesGeometry(geo, th), m); l.position.set(x, y, z); l.rotation.set(rx, ry, rz); return add(l); };
+  const ln = pts => add(new THREE.Line(geoP(pts), m)), sg = pts => add(hLines(geoP(pts), m));
+  if (type === 'cubo') {
+    add(hLines(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.5, 1.5, 1.5)), m));
+    add(hLines(new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(.7)), m)).userData.spin = [.9, 1.3, 0];
+  } else if (type === 'esfera') {
+    add(hLines(new THREE.WireframeGeometry(new THREE.SphereGeometry(1, 18, 12)), m));
+    const r = add(circ(1.28)); r.rotation.x = Math.PI / 2; r.rotation.y = .4;
+  } else if (type === 'reactor') {
+    [1.25, .95, .65].forEach((r, i) => { const l = add(circ(r)); l.rotation.x = i * .9; l.userData.spin = [0, (i % 2 ? -1 : 1) * (1 + i * .7), 0]; });
+    add(hLines(new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(.28)), m)).userData.spin = [1, 1.6, 0];
+  } else if (type === 'atomo') {
+    add(hLines(new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(.25, 1)), m));
+    [0, 1, 2].forEach(i => {
+      const t = add(new THREE.Group()); t.rotation.set(i * 1.05, i * .5, 0); t.add(circ(1.2));
+      const pv = new THREE.Group(); pv.userData.spin = [0, 0, 2 + i * .8]; t.add(pv);
+      const e = hLines(new THREE.EdgesGeometry(new THREE.OctahedronGeometry(.11)), m); e.position.x = 1.2; pv.add(e);
+    });
+  } else if (type === 'reloj') {
+    add(circ(1.3)); add(circ(1.4));
+    const t = []; for (let i = 0; i < 12; i++) { const a = i * .5236, s = Math.sin(a), c = Math.cos(a); t.push(new V(s * 1.1, c * 1.1, 0), new V(s * 1.25, c * 1.25, 0)); }
+    add(hLines(new THREE.BufferGeometry().setFromPoints(t), m));
+    g.userData.hands = [.55, .85, 1.05].map(l => add(hLines(new THREE.BufferGeometry().setFromPoints([new V(), new V(0, l, 0)]), m)));
+  } else if (MODELS[type]) {
+    MODELS[type]({ g, mats, m, p, ln, sg, circ, add, V });
+  } else {
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 352;
+    const pm = new THREE.MeshBasicMaterial({ map:new THREE.CanvasTexture(cv), transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide });
+    mats.push(pm); add(new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.5), pm));
+    add(hLines(new THREE.EdgesGeometry(new THREE.PlaneGeometry(2.2, 1.5)), m));
+    g.userData.panel = { cv, tex:pm.map, last:-1e9 };
+  }
+  return g;
+}
+function drawPanel(p, mir){
+  const c = p.cv.getContext('2d'); c.clearRect(0, 0, 512, 352); c.save(); if (mir) { c.translate(512, 0); c.scale(-1, 1); }
+  c.fillStyle = 'rgba(94,230,255,.14)'; c.fillRect(0, 0, 512, 352); c.fillStyle = '#5ee6ff'; c.font = '600 34px "Segoe UI",system-ui,sans-serif'; c.textAlign = 'left';
+  [`PERSONAS  ${seen.nPer ?? 0}`, `OBJETOS  ${Object.values(seen.counts || {}).reduce((a, b) => a + b, 0)}`, `GESTO  ${seen.gest || '—'}`, `ÁNIMO  ${seen.expr || '—'}`].forEach((l, i) => c.fillText(l, 36, 86 + i * 72));
+  c.restore(); p.tex.needsUpdate = true;
+}
+function addHolo(type){
+  if (!window.THREE) { setStatus('No se pudo cargar Three.js (revisa la conexión).'); return; }
+  const W = canvas.width || 640, H = canvas.height || 480, mats = [new THREE.LineBasicMaterial({ color:HCOL, transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false })];
+  const body = buildHolo(type, mats), root = new THREE.Group(); root.add(body);
+  if (type !== 'reloj' && type !== 'panel') body.rotation.set(.4, Math.random() * 6, 0);
+  holos.push({ type, x:W * (.3 + .4 * Math.random()), y:H * (.3 + .3 * Math.random()), r:Math.min(W, H) * .15, a:Math.random() * 6, born:performance.now(), body, root, mats, vx:0, vy:0 });
+  if (holos.length > 8) holos.shift();
+}
+// rotación en ejes de pantalla (como una bola de cristal): ax = arriba/abajo, ay = izq/der, az = giro en el plano
+function spinHolo(o, ax, ay, az){ o.body.quaternion.premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(ax, ay, az))); }
+// selector para crear hologramas sin voz
+const hb = document.createElement('div'); hb.className = 'only-mole';
+hb.style.cssText = 'position:absolute;right:10px;top:10px;z-index:3;display:flex;gap:6px;background:#0b1118e6;border:1px solid var(--line);border-radius:12px;padding:5px;max-width:calc(100% - 20px)';
+hb.innerHTML = '<select id="holoSel" style="min-width:0">' + HOLO_LIST.map(([k, n]) => `<option value="${k}">${n}</option>`).join('') + '</select><button id="holoAdd" class="primary">＋</button><button id="holoRnd" title="Aleatorio">🎲</button><button id="holoClr" title="Borrar todos">🗑</button>';
+stage.appendChild(hb);
+$('holoAdd').onclick = () => addHolo($('holoSel').value);
+$('holoRnd').onclick = () => addHolo(HOLO_LIST[Math.floor(Math.random() * HOLO_LIST.length)][0]);
+$('holoClr').onclick = () => { holos.length = 0; };
+function render3D(ts, held, rot, mir){
+  const W = canvas.width, H = canvas.height; if (!window.THREE || !W) return;
+  if (!R3) { R3 = new THREE.WebGLRenderer({ canvas:hc, alpha:true, antialias:true }); R3.setPixelRatio(1); R3.setClearColor(0, 0); scene3 = new THREE.Scene(); cam3 = new THREE.PerspectiveCamera(40, 1, 10, 8000); }
+  if (hc.width !== W || hc.height !== H) { R3.setSize(W, H, false); cam3.aspect = W / H; cam3.position.z = H / 2 / Math.tan(20 * Math.PI / 180); cam3.updateProjectionMatrix(); }
+  scene3.children.slice().forEach(c => { if (!holos.some(o => o.root === c)) { scene3.remove(c); c.traverse(n => n.geometry?.dispose()); } });
+  holos.forEach(o => {
+    if (!o.root.parent) scene3.add(o.root);
+    const k = Math.min(1, (ts - o.born) / 500), col = held.has(o) ? 0xffffff : rot.has(o) ? 0xffb347 : HCOL;
+    o.root.position.set(o.x - W / 2, H / 2 - o.y, 0); o.root.scale.setScalar(o.r * (.3 + .7 * k));
+    o.mats.forEach(m => { m.color.setHex(col); m.opacity = k * (.82 + .14 * Math.sin(ts / 40 + o.a * 9)); });
+    if (!held.has(o) && !rot.has(o)) {                       // inercia tras soltarlo + giro lento en reposo
+      spinHolo(o, o.vx, o.vy, 0); o.vx *= .94; o.vy *= .94;
+      if (Math.hypot(o.vx, o.vy) < .004 && o.type !== 'reloj' && o.type !== 'panel') spinHolo(o, 0, .006, 0);
+    }
+    o.body.traverse(n => { const s = n.userData.spin; if (s) { n.rotation.x += s[0] * .016; n.rotation.y += s[1] * .016; n.rotation.z += s[2] * .016; } });
+    const u = o.body.userData;
+    if (u.hands) { const d = new Date(); [d.getHours() % 12 * 30 + d.getMinutes() / 2, d.getMinutes() * 6, d.getSeconds() * 6].forEach((a, i) => u.hands[i].rotation.z = -a * Math.PI / 180); }
+    if (u.panel && ts - u.panel.last > 400) { u.panel.last = ts; drawPanel(u.panel, mir); }
+  });
+  R3.render(scene3, cam3);
+}
+function updateHolos(hands, W){
+  const pin = hands.filter(h => h.kind === 'pinch'), fist = hands.filter(h => h.kind === 'fist');
+  Object.keys(holoGrab).forEach(i => { if (!pin.some(h => h.i == i)) delete holoGrab[i]; });
+  Object.keys(rotGrab).forEach(i => { if (!fist.some(h => h.i == i)) delete rotGrab[i]; });
+  // pellizco = mover
+  pin.forEach(h => {
+    let g = holoGrab[h.i];
+    if (!g) { const o = holos.slice().reverse().find(o => Math.hypot(o.x - h.pp[0], o.y - h.pp[1]) < o.r * 1.5); if (o) { g = holoGrab[h.i] = { o, dx:o.x - h.pp[0], dy:o.y - h.pp[1] }; holos.push(holos.splice(holos.indexOf(o), 1)[0]); o.vx = o.vy = 0; } }
+    if (g) { g.o.x = h.pp[0] + g.dx; g.o.y = h.pp[1] + g.dy; }
+  });
+  // dos manos pellizcando el mismo holograma = escalar + girar en el plano
+  const gs = Object.values(holoGrab), two = gs.length === 2 && gs[0].o === gs[1].o;
+  holos.forEach(o => { if (!(two && gs[0].o === o)) { delete o.d0; delete o.t0; } });
+  if (two) {
+    const o = gs[0].o, [a, b] = pin.map(h => h.pp), d = Math.hypot(a[0] - b[0], a[1] - b[1]), ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    if (!o.d0) { o.d0 = d; o.r0 = o.r; }
+    o.r = Math.max(W * .05, Math.min(W * .35, o.r0 * d / o.d0)); o.x = (a[0] + b[0]) / 2; o.y = (a[1] + b[1]) / 2;
+    if (o.t0 !== undefined) { let dA = ang - o.t0; dA -= Math.round(dA / 6.2832) * 6.2832; spinHolo(o, 0, 0, -dA); } o.t0 = ang;
+  }
+  // puño sobre un holograma + arrastrar = girarlo (la superficie sigue a tu mano)
+  fist.forEach(h => {
+    let g = rotGrab[h.i];
+    if (!g) { const o = holos.slice().reverse().find(o => Math.hypot(o.x - h.palm[0], o.y - h.palm[1]) < o.r * 1.6); if (!o) return; g = rotGrab[h.i] = { o, p:h.palm.slice() }; }
+    const o = g.o, ax = (h.palm[1] - g.p[1]) / o.r, ay = (h.palm[0] - g.p[0]) / o.r; g.p = h.palm.slice();
+    spinHolo(o, ax, ay, 0); o.vx = o.vx * .5 + ax * .5; o.vy = o.vy * .5 + ay * .5;
+  });
+}
+
+/* ---------- Seguimiento de objetos ---------- */
+function iou(a, b){
+  const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y), x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
+  const i = Math.max(0, x2 - x1) * Math.max(0, y2 - y1); return i / (a.w * a.h + b.w * b.h - i + 1e-6);
+}
+function updateTracks(dets, stab){
+  if (!stab) { tracks = dets.map(d => ({ ...d, hits:9, miss:0 })); return; }
+  const used = new Set();
+  tracks.forEach(t => {
+    let best = -1, bi = .3;
+    dets.forEach((d, i) => { if (used.has(i) || d.cls !== t.cls) return; const v = iou(t.box, d.box); if (v > bi) { bi = v; best = i; } });
+    if (best >= 0) {
+      used.add(best); const d = dets[best], k = .6, b = t.box;
+      t.box = { x:b.x+(d.box.x-b.x)*k, y:b.y+(d.box.y-b.y)*k, w:b.w+(d.box.w-b.w)*k, h:b.h+(d.box.h-b.h)*k };
+      t.score += (d.score - t.score) * k; t.hits++; t.miss = 0;
+    } else t.miss++;
+  });
+  dets.forEach((d, i) => { if (!used.has(i)) tracks.push({ ...d, hits:1, miss:0 }); });
+  tracks = tracks.filter(t => t.miss <= 4);
+}
+
+/* ---------- Gestos de mano ---------- */
+const waveHist = {};
+const pinchSt = {}, gh = {}, lmS = {};
+function classifyHand(lm, mpCat, mpScore, W, H, paintOn, id){
+  const P = i => [lm[i].x * W, lm[i].y * H, lm[i].z * W];
+  const d = (a, b) => { const p = P(a), q = P(b); return Math.hypot(p[0]-q[0], p[1]-q[1]); };
+  const ang = (a, b, c) => { const p = P(a), q = P(b), r = P(c), u = [p[0]-q[0], p[1]-q[1], p[2]-q[2]], v = [r[0]-q[0], r[1]-q[1], r[2]-q[2]];
+    return Math.acos(clamp((u[0]*v[0] + u[1]*v[1] + u[2]*v[2]) / ((Math.hypot(...u) * Math.hypot(...v)) || 1), -1, 1)) * 57.3; };
+  const size = Math.max(d(0, 9), d(5, 17) * 1.1) || 1;                       // tamaño de mano estable al girarla
+  const th = d(4, 5) > size * .55 && ang(2, 3, 4) > 135;
+  const [i, m, r, p] = [[5,6,8,7],[9,10,12,11],[13,14,16,15],[17,18,20,19]].map(([mc, pip, tip]) => ang(mc, pip, tip) > 135 && d(tip, 0) > d(pip, 0) * 1.05);
+  const n = [i, m, r, p].filter(Boolean).length + (th ? 1 : 0), oth = [m, r, p].filter(Boolean).length;
+  const pd = d(4, 8) / size, pinch = pinchSt[id] = pinchSt[id] ? pd < .42 : pd < .3;   // histéresis: cuesta más soltar que cerrar
+  const R = (label, kind, extra) => ({ label, kind, n, size, ...extra });
+
+  if (pinch && oth === 3) return R('OK 👌', 'ok');
+  if (pinch && oth <= 1) return R('Pinza 🤏', 'pinch');
+  if (paintOn && i && !m && !r && !p) return R('Pintando ✏️', 'draw');
+  if (i && m && r && p && th && d(12, 16) > d(8, 12) * 1.8 && d(12, 16) > size * .35) return R('Spock 🖖', 'spock');
+  if (i && p && !m && !r) return th ? R('Te quiero 🤟', 'love') : R('Rock 🤘', 'rock');
+  if (th && p && !i && !m && !r) return R('Llámame 🤙', 'call');
+  if (th && i && !m && !r && !p) return R('Pistola 🔫', 'gun');
+  const mp = MP_GES[mpCat];
+  if (mp && mpScore > .5) return R(mp[0], mp[1], { score:mpScore });
+  if (n >= 1) return R(`${n} dedo${n > 1 ? 's' : ''} ${NUM[n]}`, n === 5 ? 'palm' : 'count');
+  return R('Puño ✊', 'fist');
+}
+// votación de los últimos 3 fotogramas: evita parpadeos entre gestos
+function stable(i, r){
+  const h = gh[i] ??= []; h.push(r); if (h.length > 2) h.shift();
+  const c = {}; h.forEach(x => c[x.kind] = (c[x.kind] || 0) + 1);
+  let k = r.kind; for (const x of h) if (c[x.kind] > c[k]) k = x.kind;
+  return [...h].reverse().find(x => x.kind === k);
+}
+function isWaving(i, x, size, open, now){
+  const h = waveHist[i] ??= [];
+  if (!open) { h.length = 0; return false; }
+  h.push([now, x]); while (h.length && now - h[0][0] > 1200) h.shift();
+  let prev = 0, ch = 0, mn = 1e9, mx = -1e9;
+  for (let k = 1; k < h.length; k++) {
+    const dx = h[k][1] - h[k-1][1]; mn = Math.min(mn, h[k][1]); mx = Math.max(mx, h[k][1]);
+    if (Math.abs(dx) > size * .05) { const s = Math.sign(dx); if (prev && s !== prev) ch++; prev = s; }
+  }
+  return ch >= 3 && mx - mn > size * .7;
+}
+
+/* ---------- Expresiones ---------- */
+function classifyFace(cats){
+  const m = {}; cats.forEach(c => m[c.categoryName] = c.score);
+  const s = n => m[n] || 0, avg = (a, b) => (s(a) + s(b)) / 2;
+  const smile = avg('mouthSmileLeft','mouthSmileRight'), frown = avg('mouthFrownLeft','mouthFrownRight');
+  const browDown = avg('browDownLeft','browDownRight'), bl = s('eyeBlinkLeft'), br = s('eyeBlinkRight');
+  const jaw = s('jawOpen'), wide = avg('eyeWideLeft','eyeWideRight'), up = s('browInnerUp');
+  if (s('tongueOut') > .3) return ['Lengua fuera 😛', s('tongueOut')];
+  if (Math.abs(bl - br) > .35 && Math.max(bl, br) > .5) return ['Guiño 😉', Math.max(bl, br)];
+  if (smile > .4 && jaw > .3) return ['Muy feliz 😄', smile];
+  if (smile > .4) return ['Feliz 🙂', smile];
+  if (jaw > .4 && (wide > .25 || up > .3)) return ['Sorprendido 😮', jaw];
+  if (s('mouthPucker') > .55) return ['Beso 😗', s('mouthPucker')];
+  if (s('cheekPuff') > .4) return ['Mofletes 🐡', s('cheekPuff')];
+  if (browDown > .5 && (frown > .12 || avg('noseSneerLeft','noseSneerRight') > .3)) return ['Enfadado 😠', browDown];
+  if (frown > .3 || (up > .45 && frown > .15)) return ['Triste 😢', Math.max(frown, up)];
+  if ((bl + br) / 2 > .6) return ['Ojos cerrados 😑', (bl + br) / 2];
+  return ['Neutral 😐', 1 - Math.max(smile, frown, jaw)];
+}
+
+/* ---------- Aislar persona (segmentación) ---------- */
+const maskCv = document.createElement('canvas');
+function drawIsolation(ctx, W, H){
+  const res = segmenter.segmentForVideo(video, performance.now());
+  const mk = res.confidenceMasks?.[res.confidenceMasks.length > 1 ? 1 : 0];
+  if (!mk) return;
+  const a = mk.getAsFloat32Array(), w = mk.width, h = mk.height;
+  const at = (x, y) => a[Math.floor(y * (h - 1)) * w + Math.floor(x * (w - 1))];
+  const centre = at(.5, .55) + at(.5, .75), edge = at(.03, .1) + at(.97, .1) + at(.03, .5) + at(.97, .5);
+  const inv = centre / 2 < edge / 4;                       // por si el modelo marca el fondo en vez de la persona
+  const img = new ImageData(w, h);
+  for (let k = 0; k < a.length; k++) { const v = inv ? 1 - a[k] : a[k]; img.data.set([20, 17, 31, (1 - v) * 215], k * 4); }
+  maskCv.width = w; maskCv.height = h; maskCv.getContext('2d').putImageData(img, 0, 0);
+  res.close?.(); mk.close?.();
+  isoReady = true;
+}
+let isoReady = false;
+
+/* ---------- Visor limpio ---------- */
+function drawHUD(ctx, W, H, ts, blips){
+  const lw = Math.max(1.5, W / 500), m = W * .02, l = W * .05;
+  ctx.save(); ctx.strokeStyle = '#ffffff66'; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.beginPath();
+  [[m, m, 1, 1], [W - m, m, -1, 1], [W - m, H - m, -1, -1], [m, H - m, 1, -1]].forEach(([x, y, a, b]) => { ctx.moveTo(x + a * l, y); ctx.lineTo(x, y); ctx.lineTo(x, y + b * l); });
+  ctx.stroke();
+  blips.forEach(b => { ctx.fillStyle = b.c; ctx.beginPath(); ctx.arc(b.x, b.y, Math.max(3, W / 160), 0, 7); ctx.fill(); });
+  ctx.restore();
+}
+
+/* ---------- Bucle principal ---------- */
+async function loop(){
+  const ctx = canvas.getContext('2d'), utils = new DrawingUtils(ctx);
+  let heavyEvery = 5, last = performance.now(), fps = 0, frame = 0, faceRes = null, handRes = null;
+
+  while (running) {
+    if (gesRec && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+      lastVideoTime = video.currentTime; frame++;
+      const ts = performance.now(), W = canvas.width, H = canvas.height;
+      const mirrored = stage.classList.contains('mirror');
+      const lw = Math.max(2, W / 360), fs = Math.max(14, W / 46), minScore = $('conf').value / 100;
+      ctx.clearRect(0, 0, W, H);
+
+      // --- inferencia ---
+      handRes = gesRec.recognizeForVideo(video, ts);
+      if ($('optObj').checked && objDet) {
+        if (frame % heavyEvery === 0) {
+          const dets = [];
+          objDet.detectForVideo(video, ts).detections.forEach(dt => {
+            const c = dt.categories[0]; if (!c || c.score < minScore) return;
+            const b = dt.boundingBox; dets.push({ cls:c.categoryName, score:c.score, box:{ x:b.originX, y:b.originY, w:b.width, h:b.height } });
+          });
+          updateTracks(dets, $('optStab').checked);
+        }
+      } else tracks = [];
+      if ($('optFace').checked && faceLm) { if (frame % heavyEvery === 2 || !faceRes) faceRes = faceLm.detectForVideo(video, ts); } else faceRes = null;
+      if ($('optIso').checked && segmenter) { if (frame % 3 === 0 || !isoReady) drawIsolation(ctx, W, H); if (isoReady) ctx.drawImage(maskCv, 0, 0, W, H); }
+
+      // --- manos: clasificar y actuar sobre la pizarra ---
+      const gesTexts = [], hands = [];
+      [gh, lmS, pinchSt, waveHist].forEach(o => Object.keys(o).forEach(k => { if (!handRes.landmarks?.[k]) delete o[k]; }));
+      handRes.landmarks?.forEach((lm, i) => {
+        const g = handRes.gestures[i]?.[0];
+        const pv = lmS[i], sl = lm.map((q, k) => pv ? { x:pv[k].x + (q.x - pv[k].x) * .85, y:pv[k].y + (q.y - pv[k].y) * .85, z:pv[k].z + (q.z - pv[k].z) * .85 } : { x:q.x, y:q.y, z:q.z });
+        lmS[i] = sl;                                              // landmarks suavizados solo para clasificar
+        const r = { ...stable(i, classifyHand(sl, g?.categoryName, g?.score || 0, W, H, tool === 'draw', i)) };
+        if (r.kind === 'palm' && isWaving(i, lm[0].x * W, r.size, true, ts)) { r.label = 'Saludando 👋'; r.kind = 'wave'; }
+        else if (r.kind !== 'palm') waveHist[i] = [];
+        const pt = k => [lm[k].x * W, lm[k].y * H];
+        hands.push({ i, kind:r.kind, label:r.label, score:r.score, lm, tip:pt(8), pp:[(pt(4)[0] + pt(8)[0]) / 2, (pt(4)[1] + pt(8)[1]) / 2], palm:pt(9) });
+        gesTexts.push(r.label);
+      });
+      processHands(hands, W, H, ts);
+
+      // --- pizarra (debajo de los marcadores) ---
+      drawStrokes(ctx);
+      if (grab) { const b = grab.mode === 3 ? bbox([grab.st]) : bbox(); if (b) { ctx.setLineDash([8, 6]); ctx.strokeStyle = '#5ee6ff'; ctx.lineWidth = lw; ctx.strokeRect(b.x - 8, b.y - 8, b.w + 16, b.h + 16); ctx.setLineDash([]); } }
+
+      if (dis) drawDissolve(ctx, W, ts);
+      if ($('optVR').checked) drawPalette(ctx, W, H, mirrored, ts);
+
+      // --- hologramas ---
+      hc.style.visibility = isMole() ? 'visible' : 'hidden';
+      if (isMole()) { updateHolos(hands, W); render3D(ts, new Set(Object.values(holoGrab).map(g => g.o)), new Set(Object.values(rotGrab).map(g => g.o)), mirrored); }
+
+      // --- HUD de M.O.L.E ---
+      if (document.body.dataset.mode === 'mole' && $('optHUD').checked) {
+        const blips = [];
+        tracks.filter(t => (t.hits >= 2 || t.score >= .6) && t.miss <= 3).forEach(t => blips.push({ x:t.box.x + t.box.w / 2, y:t.box.y + t.box.h / 2, c:colorFor(t.cls) }));
+        hands.forEach(h => blips.push({ x:h.palm[0], y:h.palm[1], c:'#ffb347' }));
+        faceRes?.faceLandmarks?.forEach(lm => blips.push({ x:lm[1].x * W, y:lm[1].y * H, c:'#5ee6ff' }));
+        drawHUD(ctx, W, H, ts, blips);
+      }
+
+      // --- objetos / personas por separado ---
+      const counts = {}; let nObj = 0, nPer = 0;
+      tracks.filter(t => (t.hits >= 2 || t.score >= .6) && t.miss <= 3).forEach(t => {
+        const { x, y, w, h } = t.box, color = colorFor(t.cls), person = t.cls === 'person';
+        if (person) nPer++; else { counts[t.cls] = (counts[t.cls] || 0) + 1; nObj++; }
+        ctx.strokeStyle = color + '66'; ctx.lineWidth = person ? lw * 1.5 : 1; ctx.setLineDash(person ? [10, 8] : []); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+        drawBrackets(ctx, x, y, w, h, Math.min(w, h) * .22, color, lw * 1.5);
+        drawLabel(ctx, `${ES[t.cls] || t.cls} ${Math.round(t.score * 100)}%`, x, y - fs - 14 < 0 ? y : y - fs - 14, color, fs, mirrored);
+      });
+
+      // --- cara ---
+      const exprTexts = [];
+      faceRes?.faceLandmarks?.forEach((lm, i) => {
+        if ($('optMesh').checked) utils.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_CONTOURS, { color:'#ffffffaa', lineWidth:1 });
+        const xs = lm.map(p => p.x * W), ys = lm.map(p => p.y * H);
+        const x = Math.min(...xs), y = Math.min(...ys), w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+        drawBrackets(ctx, x, y, w, h, Math.min(w, h) * .2, '#5ee6ff', lw * 1.5);
+        const cats = faceRes.faceBlendshapes?.[i]?.categories;
+        if (cats) {
+          const [label, sc] = classifyFace(cats); exprTexts.push(label);
+          drawLabel(ctx, `${label} ${Math.round(Math.min(1, sc) * 100)}%`, x, y + h + 10 + fs > H ? y + 4 : y + h + 6, '#5ee6ff', fs, mirrored);
+        }
+      });
+
+      // --- manos: esqueleto, cursor y etiquetas ---
+      hands.forEach(h => {
+        if ($('optSkel').checked) {
+          utils.drawConnectors(h.lm, GestureRecognizer.HAND_CONNECTIONS, { color:'#ffffffcc', lineWidth:lw });
+          utils.drawLandmarks(h.lm, { color:'#ffb347', lineWidth:1, radius:lw * 1.2 });
+        }
+        ctx.lineWidth = lw * 1.5;
+        if (h.kind === 'draw' && tool === 'draw') { ctx.strokeStyle = color; ctx.beginPath(); ctx.arc(h.tip[0], h.tip[1], +$('size').value * W / 1280 + 6, 0, 7); ctx.stroke(); }
+        if (h.kind === 'pinch') { ctx.strokeStyle = grab ? '#5ee6ff' : '#fff'; ctx.beginPath(); ctx.arc(h.pp[0], h.pp[1], W / 60, 0, 7); ctx.stroke(); }
+        if (h.kind === 'palm' && tool === 'erase') { ctx.strokeStyle = '#ff5d8f'; ctx.beginPath(); ctx.arc(h.palm[0], h.palm[1], W * .07, 0, 7); ctx.stroke(); }
+        const xs = h.lm.map(p => p.x * W), ys = h.lm.map(p => p.y * H), x = Math.min(...xs), y = Math.min(...ys);
+        if ($('optLabels').checked) drawLabel(ctx, h.label + (h.score ? ` ${Math.round(h.score * 100)}%` : ''), x, y - fs - 14 < 0 ? y + 8 : y - fs - 14, '#ffb347', fs, mirrored);
+      });
+
+      // --- panel lateral: persona separada de objetos ---
+      if (frame % 6 === 0) { $('gesture').innerHTML = `<span>Gesto</span>${$('optLabels').checked ? gesTexts.join('  |  ') || '—' : 'oculto'}`;
+      $('expr').innerHTML = `<span>Expresión</span>${exprTexts.join('  |  ') || (faceLm ? '—' : 'Cara desactivada')}`;
+      $('people').textContent = `Personas detectadas: ${$('optObj').checked ? nPer : '—'}`;
+      Object.assign(seen, { gest:gesTexts.join(', '), expr:exprTexts.join(', '), nPer, counts });
+      const ul = $('list'); ul.innerHTML = '';
+      const keys = Object.keys(counts);
+      if (!$('optObj').checked) ul.innerHTML = '<li><span>Activa «Objetos» en Ajustes</span></li>';
+      else if (!keys.length) ul.innerHTML = '<li><span>Ningún objeto</span></li>';
+      keys.forEach(k => { const li = document.createElement('li'); li.innerHTML = `<span>${ES[k] || k}</span><span>×${counts[k]}</span>`; ul.append(li); }); }
+
+      const now = performance.now(); fps = fps * .8 + (1000 / (now - last)) * .2; last = now; heavyEvery = fps < 22 ? 8 : 5;
+      $('hud').textContent = document.body.dataset.mode === 'mole' ? `FPS ${fps.toFixed(0)} · personas ${nPer} · objetos ${nObj} · manos ${hands.length}` : `FPS ${fps.toFixed(0)} · trazos ${strokes.length} · zoom ${T.s.toFixed(1)}×`;
+    }
+    await new Promise(r => requestAnimationFrame(r));
+  }
+}
+
+const isMole = () => document.body.dataset.mode === 'mole';
+function updateBtn(){ $('btnCam').textContent = running ? (isMole() ? 'Detener M.O.L.E' : 'Detener cámara') : (isMole() ? 'Iniciar M.O.L.E' : 'Iniciar cámara'); }
+$('btnCam').onclick = () => running ? stopMole() : (isMole() ? startMole() : startCamera());
+$('btnFlip').onclick = () => { facing = facing === 'user' ? 'environment' : 'user'; if (running) startCamera(); };
+$('selCam').onchange = e => { if (running) startCamera(e.target.value); };
+$('model').onchange = () => { objDet = null; loading.obj = null; tracks = []; if ($('optObj').checked) ensure('obj'); };
+$('conf').oninput = e => { $('confVal').textContent = e.target.value + '%'; };
+
+/* ---------- Modos: M.O.L.E (principal) / Pizarra (opcional) ---------- */
+function glitchFx(){ [$('stage'), document.querySelector('h1')].forEach(e => { e.classList.remove('fx'); void e.offsetWidth; e.classList.add('fx'); }); }
+function setMode(m){
+  if (document.body.dataset.mode !== m) glitchFx();
+  document.body.dataset.mode = m; updateBtn();
+  [...$('modes').children].forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  if (m === 'mole') {
+    tool = 'look'; $('optVR').checked = false;
+  } else {
+    tool = 'draw'; $('optVR').checked = true;
+    [...$('tools').children].forEach(x => x.classList.toggle('on', x.dataset.t === 'draw'));
+  }
+}
+$('modes').onclick = e => { const b = e.target.closest('button'); if (b) setMode(b.dataset.m); };
+setMode('mole');
+
+/* ---------- Asistente de voz ---------- */
+const seen = { gest:'', expr:'', nPer:0, counts:{} };
+const norm = t => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+function addLog(cls, text){ const d = document.createElement('div'); d.className = cls; d.textContent = text; $('log').append(d); while ($('log').children.length > 8) $('log').firstChild.remove(); $('log').scrollTop = 1e9; }
+let speaking = false, listening = false, rec = null, mutedUntil = 0;
+function speak(text){
+  addLog('jv', 'M.O.L.E: ' + text);
+  if (!$('optVoice').checked || !window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(String(text).replace(/M\.O\.L\.E/g, 'Mole')); u.lang = 'es-ES';
+  const v = speechSynthesis.getVoices().find(v => v.lang.startsWith('es')); if (v) u.voice = v;
+  speaking = true; setAssist('speak');
+  let guard;
+  const done = () => { clearTimeout(guard); speaking = false; mutedUntil = performance.now() + 600; if (listening) setAssist('listen'); };
+  guard = setTimeout(done, 2500 + text.length * 80);   // por si el navegador no avisa de que terminó de hablar
+  u.onend = u.onerror = done;
+  speechSynthesis.speak(u);
+}
+const listObjs = c => Object.entries(c).map(([k, n]) => (ES[k] || k) + (n > 1 ? ' ' + n + ' veces' : '')).join(', ');
+function describe(){
+  if (!running) return 'Primero activa la cámara y podré ver.';
+  const parts = [];
+  parts.push(seen.nPer ? (seen.nPer === 1 ? 'Veo a una persona' : `Veo a ${seen.nPer} personas`) : 'No veo a nadie');
+  const o = listObjs(seen.counts); if (o) parts.push('y estos objetos: ' + o);
+  let r = parts.join(' ') + '.';
+  if (seen.expr) r += ' Su expresión parece: ' + seen.expr + '.';
+  if (seen.gest && seen.gest !== '—') r += ' Gesto detectado: ' + seen.gest + '.';
+  return r;
+}
+/*CALC-START*/
+const NUMW = { cero:0, uno:1, una:1, un:1, dos:2, tres:3, cuatro:4, cinco:5, seis:6, siete:7, ocho:8, nueve:9, diez:10, once:11, doce:12, trece:13, catorce:14, quince:15, dieciseis:16, diecisiete:17, dieciocho:18, diecinueve:19, veinte:20, treinta:30, cuarenta:40, cincuenta:50, sesenta:60, setenta:70, ochenta:80, noventa:90, cien:100, mil:1000 };
+const NUMRE = '(\\d+(?:[.,]\\d+)?)';
+let lastCalc = null;
+function prep(raw){
+  let t = norm(raw).replace(/[¿?¡!]/g, ' ');
+  t = t.replace(/\bveinti(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\b/g, (m, u) => 20 + NUMW[u]);
+  t = t.replace(/\b[a-z]+\b/g, w => (w in NUMW && w !== 'un' && w !== 'una' ? NUMW[w] : w));
+  t = t.replace(/\b([2-9]0) y ([1-9])\b/g, (m, a, b) => +a + +b);
+  return t.replace(/(\d+) 1000\b/g, '($1*1000)');
+}
+function tryCalc(raw){
+  let t = prep(raw);
+  if (!/\d/.test(t)) return null;
+  t = t.replace(/\b(por favor|dime|cuanto (?:es|son|seria|da|vale)|cuantos son|calcula(?:me)?|resuelve|cual es el resultado de|resultado de|cuanto|mole)\b/g, ' ');
+  t = t.replace(new RegExp('el doble de\\s*' + NUMRE, 'g'), '($1*2)').replace(new RegExp('el triple de\\s*' + NUMRE, 'g'), '($1*3)').replace(new RegExp('la mitad de\\s*' + NUMRE, 'g'), '($1/2)');
+  t = t.replace(new RegExp(NUMRE + '\\s*(?:%|por ciento) de\\s*' + NUMRE, 'g'), '($1/100*$2)');
+  t = t.replace(new RegExp('raiz(?: cuadrada)? de\\s*' + NUMRE, 'g'), 'S($1)');
+  t = t.replace(/al cuadrado/g, '**2').replace(/al cubo/g, '**3').replace(/elevado a( la)?/g, '**');
+  t = t.replace(/dividido (?:entre|por)|partido (?:entre|por)|\bentre\b/g, '/').replace(/multiplicado por|\bpor\b|\bveces\b/g, '*');
+  t = t.replace(/\bmas\b/g, '+').replace(/\bmenos\b/g, '-').replace(/(\d)\s*x\s*(\d)/g, '$1*$2');
+  t = t.replace(/\b(el|la|los|las)\s+(?=[\d(S])/g, '').replace(/,(?!\d)/g, ' ').replace(/(\d),(\d)/g, '$1.$2').replace(/\s+/g, '');
+  if (!/^[\d+\-*\/().S]+$/.test(t) || !/[+\-*\/S]/.test(t)) return null;
+  let r; try { r = Function('S', '"use strict";return (' + t + ')')(Math.sqrt); } catch { return null; }
+  if (typeof r !== 'number' || !isFinite(r)) return /\/0(?!\d|\.)/.test(t) ? 'No se puede dividir entre cero.' : null;
+  r = Math.round(r * 1e9) / 1e9; lastCalc = { raw, expr:t, res:r };
+  return 'Son ' + r.toLocaleString('es-ES', { maximumFractionDigits:9 }) + '.';
+}
+function tryCompare(raw){
+  const t = prep(raw).replace(/(\d),(\d)/g, '$1.$2');
+  const n = (t.match(/\d+(?:\.\d+)?/g) || []).map(Number);
+  if (n.length < 2 || !/mayor|menor/.test(t)) return null;
+  const f = x => x.toLocaleString('es-ES');
+  if (/\bes\s+\d+(?:\.\d+)?\s+(mayor|menor)\s+que/.test(t)) {
+    const big = /mayor/.test(t), ok = big ? n[0] > n[1] : n[0] < n[1];
+    return (ok ? 'Sí' : 'No') + ', ' + f(n[0]) + (n[0] === n[1] ? ' es igual a ' : ok === big ? ' es mayor que ' : ' es menor que ') + f(n[1]) + '.';
+  }
+  return /mayor/.test(t) ? 'El mayor es ' + f(Math.max(...n)) + '.' : 'El menor es ' + f(Math.min(...n)) + '.';
+}
+function explainCalc(){
+  if (!lastCalc) return null;
+  const e = lastCalc.expr.replace(/\*\*/g, '^').replace(/\*/g, '×').replace(/\//g, '÷').replace(/S\(/g, 'raíz(');
+  return `Entendí «${lastCalc.raw.replace(/^\s*moles?[,\s]+/i, '')}» como ${e}. Hago primero paréntesis y potencias, luego multiplicar y dividir, y al final sumar y restar. Resultado: ${lastCalc.res.toLocaleString('es-ES', { maximumFractionDigits:9 })}.`;
+}
+/*CALC-END*/
+function answer(raw){
+  raw = raw.replace(/^\s*moles?[,\s]+/i, '');
+  const t = norm(raw), has = re => re.test(t);
+  if (has(/explica|paso a paso|como lo (has )?(hecho|calculado)|por que/) && lastCalc) return explainCalc();
+  const c = tryCalc(raw) || tryCompare(raw); if (c) return c;
+  if (has(/que ves|que hay|describe|que tengo|mira/)) {
+    if (running && !$('optObj').checked) { $('optObj').checked = true; $('optObj').dispatchEvent(new Event('change')); return 'Activo el reconocimiento de objetos. Dame unos segundos y pregúntame otra vez.'; }
+    return describe();
+  }
+  if (has(/cuantas personas|cuanta gente|hay alguien/)) return running ? (seen.nPer ? `Hay ${seen.nPer} persona${seen.nPer > 1 ? 's' : ''}.` : 'No veo a nadie ahora mismo.') : 'Primero activa la cámara.';
+  if (has(/gesto|mano/)) return running ? (seen.gest && seen.gest !== '—' ? 'Veo: ' + seen.gest : 'No veo ninguna mano.') : 'Primero activa la cámara.';
+  if (has(/expresion|como estoy|mi cara|como me ves/)) return seen.expr ? 'Pareces: ' + seen.expr : 'No detecto tu cara ahora mismo.';
+  if (has(/hora/)) return 'Son las ' + new Date().toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit' });
+  if (has(/fecha|que dia/)) return 'Hoy es ' + new Date().toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
+  if (has(/que hologramas|lista de hologramas|catalogo|que modelos/)) return `Tengo ${HOLO_LIST.length} modelos: ` + HOLO_LIST.map(x => x[1]).join(', ') + '.';
+  if (has(/borra|quita|elimina|apaga/) && has(HOLO_RE)) { const n = holos.length; holos.length = 0; return n ? 'Hologramas retirados.' : 'No hay hologramas.'; }
+  if (has(/crea|crear|muestra|saca|pon|invoca|enciende|activa|abre|proyecta/) && has(HOLO_RE)) {
+    if (!running) return 'Primero pulsa Iniciar M.O.L.E.';
+    if (!isMole()) setMode('mole');
+    const ks = Object.keys(HOLO_TYPES).filter(k => has(new RegExp(k))); const types = [...new Set(ks.map(k => HOLO_TYPES[k]))];
+    (types.length ? types : ['reactor']).forEach(addHolo);
+    return 'Hologramas listos. Pellizca para moverlos, cierra el puño sobre uno y arrastra para girarlo; con dos manos pellizcando lo escalas y lo giras.';
+  }
+  if (has(/pizarra|dibuj/)) { setMode('draw'); return 'Modo pizarra activado.'; }
+  if (has(/modo mole|escaner|vision/)) { setMode('mole'); return 'Modo M.O.L.E activado.'; }
+  if (has(/quien eres|como te llamas/)) return 'Soy M.O.L.E, tu asistente. Veo por la cámara, calculo, te respondo y proyecto hologramas.';
+  if (has(/ayuda|que puedes|que sabes/)) return 'Pregúntame qué ves, cuántas personas hay, qué gesto hago, cómo estoy, la hora o la fecha. También calculo: sumas, restas, porcentajes, raíces, potencias y comparaciones, y si dices «explícalo» te enseño los pasos. Di «modo pizarra» para dibujar.';
+  if (has(/gracias/)) return 'A tu servicio.';
+  if (has(/hola|buenas|buenos dias|buenas tardes/)) return 'Hola. ¿En qué te ayudo?';
+  return 'No he entendido. Prueba con «¿qué ves?» o «ayuda».';
+}
+function handle(text){
+  text = text.trim(); if (!text) return;
+  addLog('me', 'Tú: ' + text);
+  speak(answer(text));
+}
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let fileWarned = false, recOn = false;
+function setAssist(st){ $('aorb').className = 'aorb ' + st; $('astate').textContent = { off:'Apagado', listen:'Te escucho', speak:'Hablando…' }[st]; }
+function micState(t){ $('micState').textContent = 'Micrófono: ' + t; }
+function stopListening(msg){
+  listening = false; recOn = false; setAssist('off'); $('heard').textContent = '';
+  try { rec?.abort(); } catch {}
+  if (msg) { addLog('jv', 'M.O.L.E: ' + msg); micState(msg); }
+}
+/* Micrófono: pide permiso con getUserMedia (así el navegador lo detecta) y enseña el nivel de entrada */
+let micStream = null, audioCtx = null, meterOn = false;
+async function initMic(){
+  if (!SR) { micState('tu navegador no admite voz. Usa Chrome o Edge.'); return false; }
+  if (!navigator.mediaDevices?.getUserMedia) { micState('necesita https o localhost.'); return false; }
+  try { micStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true } }); }
+  catch (e) {
+    const loc = location.protocol === 'file:' ? ' Estás abriendo la página como archivo: Chrome no guarda el permiso así. Ábrela con localhost o súbela a https.' : ' Si ya lo aceptaste, mira que Windows/macOS permita el micrófono a tu navegador (Privacidad → Micrófono).';
+    micState(({ NotAllowedError:'permiso denegado (NotAllowedError).' + loc, NotFoundError:'no se detecta ningún micrófono. Revisa Sonido → Entrada en tu sistema.', NotReadableError:'otra aplicación está usando el micrófono.' }[e.name] || e.message) + ' [' + e.name + ']');
+    return false;
+  }
+  const t = micStream.getAudioTracks()[0]; micState('activo · ' + (t?.label || 'micrófono predeterminado'));
+  try {
+    audioCtx = new AudioContext(); const an = audioCtx.createAnalyser(); an.fftSize = 512;
+    audioCtx.createMediaStreamSource(micStream).connect(an); const buf = new Uint8Array(an.fftSize); meterOn = true;
+    (function tick(){ if (!meterOn) return; an.getByteTimeDomainData(buf); let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128)); $('meter').style.width = Math.min(100, m * 1.4) + '%'; requestAnimationFrame(tick); })();
+  } catch {}
+  return true;
+}
+function stopMic(){ meterOn = false; $('meter').style.width = '0'; micStream?.getTracks().forEach(t => t.stop()); micStream = null; audioCtx?.close().catch(() => {}); audioCtx = null; micState('sin iniciar'); }
+async function startMole(){
+  await startCamera(); if (!running) return;
+  if (!(await initMic())) { addLog('jv', 'M.O.L.E: veo, pero no te oigo: ' + $('micState').textContent.replace('Micrófono: ', '')); return; }
+  listening = true; setAssist('listen'); startRec(); speak('Hola, soy M.O.L.E. Te escucho.');
+}
+function stopMole(){ stopListening(); stopMic(); stopCamera(); }
+function startRec(){
+  if (!SR || !listening) return;
+  if (!rec) {   // una sola instancia: el micro NO se para mientras M.O.L.E habla, solo se ignora lo que oye
+    rec = new SR(); rec.lang = 'es-ES'; rec.interimResults = true; rec.continuous = true;
+    rec.onstart = () => { recOn = true; micState('escuchando…'); };
+    rec.onresult = e => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (!e.results[i].isFinal) { if (!speaking) $('heard').textContent = '…' + e.results[i][0].transcript; continue; }
+        $('heard').textContent = '«' + e.results[i][0].transcript.trim() + '»';
+        if (speaking || performance.now() < mutedUntil) continue;
+        let t = e.results[i][0].transcript;
+        if ($('optWake').checked) {
+          const m = norm(t).match(/\bmoles?\b/);
+          if (!m) { addLog('me', '(oído sin decir «M.O.L.E»: ' + t.trim() + ')'); continue; }
+          t = t.slice(m.index + m[0].length).replace(/^[,\s]+/, ''); if (!t) { speak('Dime.'); continue; }
+        }
+        handle(t);
+      }
+    };
+    rec.onend = () => { recOn = false; if (listening) setTimeout(startRec, 300); };
+    rec.onerror = e => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') stopListening('no tengo permiso para el micrófono. Pulsa el candado de la barra de direcciones y permítelo.');
+      else if (e.error === 'audio-capture') stopListening('el reconocimiento de voz no encuentra el micrófono. En Chrome: Ajustes → Privacidad → Configuración del sitio → Micrófono, y elige el integrado.');
+      else if (e.error === 'network') stopListening('el reconocimiento de voz no puede conectar. Necesita internet y Chrome o Edge (Brave y otros navegadores lo bloquean).');
+      else if (e.error !== 'no-speech' && e.error !== 'aborted') micState('error de voz: ' + e.error);
+    };
+  }
+  if (recOn) return;
+  try { rec.start(); } catch {}
+}
+$('optWake').onchange = () => {};
+const setOpen = o => { document.body.classList.toggle('set-open', o); $('settings').setAttribute('aria-hidden', !o); };
+$('btnSet').onclick = () => setOpen(true);
+$('btnSetClose').onclick = $('scrim').onclick = () => setOpen(false);
+addEventListener('keydown', e => { if (e.key === 'Escape') setOpen(false); });
+speechSynthesis?.getVoices();
+</script>
+</body>
+</html>
